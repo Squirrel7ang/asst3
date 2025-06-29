@@ -31,8 +31,16 @@ void cpu_exclusive_scan(int* start, int* end, int* output) {
     // output of intermediate steps of your CUDA segmented scan.
     // Uncomment the line above to use it as a reference.
   
+    // NOTE: there are bugs in the following parallel code when (start-end) is not 2^n
+  
     int N = end - start;
     memmove(output, start, N*sizeof(int));
+    
+    // printf("origin: ");
+    // for (int i = 0; i < N; i++) {
+    //     printf("%d, ", output[i]);
+    // }
+    // printf("\n");
     
     // upsweep phase
     for (int twod = 1; twod < N/2; twod*=2) {
@@ -40,6 +48,12 @@ void cpu_exclusive_scan(int* start, int* end, int* output) {
 	
         for (int i = 0; i < N; i += twod1) {
 	    output[i+twod1-1] = output[i+twod-1] + output[i+twod1-1];
+            // printf("output[%d] = %d + %d = %d\n", 
+            //     i+twod1-1, 
+            //     output[i+twod1-1] - output[i+twod-1], 
+            //     output[i+twod-1], 
+            //     output[i+twod1-1]
+            // );
         }
     }
 
@@ -55,6 +69,11 @@ void cpu_exclusive_scan(int* start, int* end, int* output) {
         }
     }
 
+    printf("standard: ");
+    for (int i = 0; i < N; i++) {
+        printf("%d, ", output[i]);
+    }
+    printf("\n");
 #else    
     int N = end - start;
     output[0] = 0;

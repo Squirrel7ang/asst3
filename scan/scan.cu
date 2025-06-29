@@ -27,6 +27,39 @@ static inline int nextPow2(int n) {
     return n;
 }
 
+__global__ void cudaUpsweep(int* result, int N, int twod) {
+    int twod1 = twod * 2;
+    int i = (blockIdx.x * blockDim.x + threadIdx.x) * twod1;
+    result[i+twod1-1] += result[i+twod-1];
+    // printf("result[%2d] = %d + %d = %d\n", 
+    //     i+twod1-1, 
+    //     result[i+twod1-1] - result[i+twod-1], 
+    //     result[i+twod-1], 
+    //     result[i+twod1-1]
+    // );
+    // for (int i = 0; i < N; i += twod1) {
+    //     output[i+twod1-1] = output[i+twod-1] + output[i+twod1-1];
+    // }
+}
+
+__global__ void cudaDownsweep(int* result, int N, int twod) {
+    if (twod == N/2) {
+        // the first time, only one thread is running.
+        result[N-1] = 0;
+    }
+
+    int twod1 = twod * 2;
+    int i = (blockIdx.x * blockDim.x + threadIdx.x) * twod1;
+    int tmp = result[i+twod-1];
+    result[i+twod-1] = result[i+twod1-1];
+    result[i+twod1-1] += tmp;
+    // for (int i = 0; i < rounded_length; i += twod1) {
+    //     int tmp = output[i+twod-1];
+    //     output[i+twod-1] = output[i+twod1-1];
+    //     output[i+twod1-1] = tmp + output[i+twod1-1];
+    // }
+}
+
 // exclusive_scan --
 //
 // Implementation of an exclusive scan on global memory array `input`,
@@ -54,7 +87,46 @@ void exclusive_scan(int* input, int N, int* result)
     // to CUDA kernel functions (that you must write) to implement the
     // scan.
 
+    cudaMemcpy(result, input, N*sizeof(int), cudaMemcpyDeviceToDevice);
 
+    const int rounded_length = nextPow2(N);
+    int threadPerBlock = 8;
+
+    int pinput[rounded_length];
+    cudaMemcpy(pinput, input, N*sizeof(int), cudaMemcpyDeviceToHost);
+
+    // printf("origin: ");
+    // for (int i = 0; i < N; i++) {
+    //     printf("%d, ", pinput[i]);
+    // }
+    // printf("\n");
+
+    // upsweep phase
+    for (int twod = 1; twod < rounded_length/2; twod*=2) {
+        // int twod1 = twod * 2;
+        int totalThreads = rounded_length / twod;
+        int numBlocks = (totalThreads + threadPerBlock - 1) / threadPerBlock;
+        cudaUpsweep<<<numBlocks, threadPerBlock>>>(result, rounded_length, twod);
+        cudaDeviceSynchronize();
+    }
+    
+    // downsweep phase
+    for (int twod = rounded_length/2; twod >= 1; twod /= 2) {
+        int twod1 = twod * 2;
+        int totalThreads = rounded_length / twod1;
+        int numBlocks = (totalThreads + threadPerBlock - 1) / threadPerBlock;
+        cudaDownsweep<<<numBlocks, threadPerBlock>>>(result, rounded_length, twod);
+        cudaDeviceSynchronize();
+    }
+
+    int output[rounded_length];
+    cudaMemcpy(output, result, N*sizeof(int), cudaMemcpyDeviceToHost);
+
+    // printf("result: ");
+    // for (int i = 0; i < N; i++) {
+    //     printf("%d, ", output[i]);
+    // }
+    // printf("\n");
 }
 
 
