@@ -212,6 +212,19 @@ double cudaScanThrust(int* inarray, int* end, int* resultarray) {
     return overallDuration; 
 }
 
+__global__ void generate_flag(int* flag, int* input, int length) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < length) {
+        flag[idx] = (input[idx] == input[idx + 1]);
+    }
+}
+
+__global__ void store_repeats(int* device_flag, int* device_sum, int* device_output, int length) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < length) {
+        device_output[device_sum[idx]] = idx;
+    }
+}
 
 // find_repeats --
 //
@@ -232,6 +245,24 @@ int find_repeats(int* device_input, int length, int* device_output) {
     // exclusive_scan function with them. However, your implementation
     // must ensure that the results of find_repeats are correct given
     // the actual array length.
+
+    // Step 1: generate flag array;
+    int* device_flag;
+    int* device_sum;
+    cudaMalloc(&device_flag, length * sizeof(int));
+    cudaMalloc(&device_sum,  length * sizeof(int));
+
+    int threadPerBlock = 32;
+
+    int totalThreads = length;
+    int numBlocks = (totalThreads + threadPerBlock  -1) / threadPerBlock;
+    generate_flag<<<threadPerBlock, numBlocks>>>(device_flag, device_input, length);
+
+    // Step 2: generate sum array;
+    exclusive_scan(device_input, length, device_sum);
+
+    // Step 3: store to device_output
+    store_repeats<<<threadPerBlock, numBlocks>>>(device_flag, device_sum, device_output, length);
 
     return 0; 
 }
